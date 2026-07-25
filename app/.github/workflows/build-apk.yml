@@ -1,0 +1,75 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create .env
+        run: |
+          cat > .env << EOF
+          EXPO_PUBLIC_API_URL=https://ivox-api.btechsouto.shop
+          EXPO_PUBLIC_SUPABASE_URL=https://utbvjbltoycvczsfvouz.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0YnZqYmx0b3ljdmN6c2Z2b3V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5MTY5OTMsImV4cCI6MjEwMDQ5Mjk5M30.adruEiEDzeELXnWGuiEI8sD52k6yCPhkYPQ4dPbENY0
+          EXPO_PUBLIC_BUILD_NUMBER=${{ github.run_number }}
+          EOF
+
+      - name: Expo Prebuild
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Decode Keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.p12
+
+      - name: Build Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/android/app/release.p12 \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=ivox-key \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.store.type=PKCS12
+
+      - name: Copy APK with standard name
+        run: cp android/app/build/outputs/apk/release/app-release.apk ivox-latest.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivox-${{ github.run_number }}
+          path: ivox-latest.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: iVox Build ${{ github.run_number }}
+          files: ivox-latest.apk
+          make_latest: true
