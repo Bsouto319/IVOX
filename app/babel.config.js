@@ -1,7 +1,9 @@
+const path = require("path");
+
 module.exports = function (api) {
   api.cache(true);
   return {
-    presets: ["babel-preset-expo"],
-    plugins: ["./babel-plugin-strip-dynamic-import.js"],
+    presets: [require.resolve("babel-preset-expo")],
+    plugins: [path.join(__dirname, "babel-plugin-strip-dynamic-import.js")],
   };
 };
